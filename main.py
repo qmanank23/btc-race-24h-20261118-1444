@@ -73,7 +73,11 @@ class Bot:
         self.slow = Ema(SLOW)
         self.closes = []  # int closes, one per bar seen for the symbol
         self.peak = 0  # highest close since the current entry was decided
-        self.cool_until = -1  # first batch seq allowed to enter again
+        # Cooldowns count bars seen, not batch seqs: a gap minute (a batch
+        # with no bar for the symbol) advances the seq but is not a bar, and
+        # every other timing in the strategy counts bars. cool_until is the
+        # length of self.closes at which entry is allowed again.
+        self.cool_until = 0
         self.locked = False  # profit lock, latches once equity is ahead
 
     def on_bar(self, close):
@@ -103,7 +107,7 @@ class Bot:
             if close > self.peak:
                 self.peak = close
             if self._should_exit(state, close):
-                self.cool_until = state.seq + COOLDOWN_BARS
+                self.cool_until = len(self.closes) + COOLDOWN_BARS
                 return [{
                     "side": "sell",
                     "symbol": self.symbol,
@@ -115,7 +119,7 @@ class Bot:
         # Flat: latch the profit lock, then look for an entry.
         if state.equity >= self.start_cash + LOCK_PROFIT_UNITS:
             self.locked = True
-        if state.seq < self.cool_until:
+        if len(self.closes) < self.cool_until:
             return []
         if self.fast.value is None or self.slow.value is None:
             return []
